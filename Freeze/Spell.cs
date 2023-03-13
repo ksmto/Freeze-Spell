@@ -11,19 +11,18 @@ public class Spell : SpellCastCharge {
     public override void UpdateCaster() {
         base.UpdateCaster();
         if (!spellCaster.isFiring) return;
-        if (Physics.CapsuleCast(spellCaster.magic.position,
-                                spellCaster.magic.forward * 2.0f,
-                                0.75f,
-                                spellCaster.magic.forward, 
-                                out var hit)) {
-            if (hit.collider.GetComponentInParent<Creature>() is Creature { isPlayer: false } creature) {
-                if (spellCaster.ragdollHand.HandMovementDirection(Vector3.forward) < handVelocity) return;
-                GameManager.local.StartCoroutine(FreezeCreature(creature));
-            }
-            if (hit.collider.GetComponentInParent<Item>() is not Item item) return;
+        if (!Physics.CapsuleCast(spellCaster.magic.position,
+                                 spellCaster.magic.forward * 2.0f,
+                                 0.75f,
+                                 spellCaster.magic.forward,
+                                 out var hit)) return;
+        if (hit.collider.GetComponentInParent<Creature>() is Creature { isPlayer: false } creature) {
             if (spellCaster.ragdollHand.HandMovementDirection(Vector3.forward) < handVelocity) return;
-            GameManager.local.StartCoroutine(FreezeItem(item));
+            GameManager.local.StartCoroutine(FreezeCreature(creature));
         }
+        if (hit.collider.GetComponentInParent<Item>() is not Item item) return;
+        if (spellCaster.ragdollHand.HandMovementDirection(Vector3.forward) < handVelocity) return;
+        GameManager.local.StartCoroutine(FreezeItem(item));
     }
     private IEnumerator FreezeCreature(Creature creature) {
         creature?.ragdoll?.SetState(Ragdoll.State.Frozen);
