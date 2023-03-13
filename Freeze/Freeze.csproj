@@ -31,6 +31,10 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <PostBuildEvent>copy /y "C:\VS Scripts\Freeze\Freeze\bin\Debug\Freeze.dll" "D:\SteamLibrary\steamapps\common\Blade &amp; Sorcery\BladeAndSorcery_Data\StreamingAssets\Mods\Freeze"
+copy /y "C:\VS Scripts\Freeze\Freeze\bin\Debug\Freeze.pdb" "D:\SteamLibrary\steamapps\common\Blade &amp; Sorcery\BladeAndSorcery_Data\StreamingAssets\Mods\Freeze"</PostBuildEvent>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
       <HintPath>D:\steam\steamapps\common\Blade &amp; Sorcery\BladeAndSorcery_Data\Managed\0Harmony.dll</HintPath>

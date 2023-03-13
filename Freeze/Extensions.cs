@@ -20,12 +20,14 @@ using HarmonyLib;
 using ThunderRoad;
 using Extensions;
 using JetBrains.Annotations;
+using ThunderRoad.Pools;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.UI;
 using UnityEngine.VFX;
 using UnityEngine.Rendering;
 using UnityEngine.InputSystem;
+using UnityEngine.PlayerLoop;
 using UnityEngine.Windows.Speech;
 using Action = System.Action;
 using Object = UnityEngine.Object;
@@ -33,17 +35,21 @@ using Random = UnityEngine.Random;
 
 namespace Extensions {
 	internal static class Methods {
-		public static Vector3 PlayerPosition(this Creature creature) => creature.player.transform.position;
+		public static Vector3 Position(this Creature creature) => creature.transform.position;
 		public static Creature GetClosestCreature() => Creature.allActive.Where(creature => creature.Alive() && !creature.isPlayer)
-		                                                       .OrderBy(creature =>
-			                                                                (Player.currentCreature.PlayerPosition() - creature.transform.position)
-			                                                                .sqrMagnitude)
+		                                                       .OrderBy(creature => Vector3.Distance(Player.currentCreature.Position(), creature.Position()))
 		                                                       .FirstOrDefault();
 		public static Item GetClosestItem() => Item.allActive.Where(item => item is not null)
-		                                           .OrderBy(item => (Player.currentCreature.PlayerPosition() - item.transform.position).sqrMagnitude)
+		                                           .OrderBy(item => (Vector3.Distance(Player.currentCreature.Position(), item.transform.position)))
 		                                           .FirstOrDefault();
 		public static void SliceAllParts(this Creature creature) {
-			foreach (var allParts in creature?.ragdoll?.parts) allParts?.TrySlice();
+			creature?.Kill();
+			creature?.Head()?.TrySlice();
+			creature?.Neck()?.TrySlice();
+			creature?.LeftArm()?.TrySlice();
+			creature?.RightArm()?.TrySlice();
+			creature?.LeftLeg()?.TrySlice();
+			creature?.RightLeg()?.TrySlice();
 		}
 		public static RagdollPart GetRagdollPart(this Creature creature, RagdollPart.Type ragdollPartType) =>
 			creature?.ragdoll?.GetPart(ragdollPartType);
@@ -59,12 +65,12 @@ namespace Extensions {
 		public static RagdollPart LeftFoot(this Creature creature) => creature?.GetRagdollPart(RagdollPart.Type.LeftFoot);
 		public static RagdollPart RightFoot(this Creature creature) => creature?.GetRagdollPart(RagdollPart.Type.RightFoot);
 		public static float DistanceBetweenCreatureAndPlayer(this Creature creature) =>
-			(creature.transform.position - Player.currentCreature.player.transform.position).sqrMagnitude;
+			Vector3.Distance(Player.currentCreature.Position(), creature.transform.position);
 		public static float DistanceBetweenItems(this Item first, Item other) => (first.transform.position - other.transform.position).sqrMagnitude;
 		public static float DistanceBetweenHands() =>
 			Vector3.Distance(Player.currentCreature.handLeft.transform.position, Player.currentCreature.handRight.transform.position);
 		public static bool EmptyHanded(this RagdollHand hand) => hand?.grabbedHandle is not null &&
-		                                                         hand?.caster?.telekinesis?.catchedHandle is not null &&
+		                                                         hand.caster?.telekinesis?.catchedHandle is not null &&
 		                                                         !hand.caster.isFiring &&
 		                                                         !hand.caster.isMerging;
 		public static bool GripPressed(this RagdollHand hand) => hand.playerHand.controlHand.gripPressed;
@@ -72,8 +78,7 @@ namespace Extensions {
 		public static bool AlternateUsePressed(this RagdollHand hand) => hand.playerHand.controlHand.alternateUsePressed;
 		public static bool TriggerPressed(this Item item) => item.mainHandler.playerHand.controlHand.usePressed;
 		public static bool AlternateUsePressed(this Item item) => item.mainHandler.playerHand.controlHand.alternateUsePressed;
-		public static Vector3 HandVelocity(this RagdollHand hand) => Player.currentCreature.transform.rotation *
-		                                                             hand.playerHand.controlHand.GetHandVelocity();
+		public static Vector3 HandVelocity(this RagdollHand hand) => Player.currentCreature.transform.rotation * hand.playerHand.controlHand.GetHandVelocity();
 		public static float HandMovementDirection(this RagdollHand hand, Vector3 direction) => Vector3.Dot(hand.HandVelocity(), direction);
 		public static Transform ThumbFingerTip(this RagdollHand hand) => hand.fingerThumb.tip;
 		public static Vector3 BackHandPosition(this RagdollHand hand, float distance = 1.5f) =>
@@ -99,8 +104,10 @@ namespace Extensions {
 			spellCaster.intensity = 0.0f;
 			spellCaster?.Fire(false);
 		}
-		public static void Imbue(this Item item, string spellType, float imbuePower) =>
-			item?.colliderGroups[0]?.imbue?.Transfer(Catalog.GetData<SpellCastCharge>(spellType), imbuePower);
+		public static void Imbue(this Item item, string spellType, float imbuePower) {
+			foreach (var colliderGroup in item.colliderGroups)
+				colliderGroup?.imbue?.Transfer(Catalog.GetData<SpellCastCharge>(spellType), imbuePower);
+		}
 		public static bool Alive(this Creature creature) => !creature?.isKilled ?? false;
 		public static void CreateExplosion(Vector3 position,
 		                                   float explosionRadius = 10.0f,
@@ -132,14 +139,13 @@ namespace Extensions {
 		public static T GetOrAddComponent<T>(this GameObject gameObject) where T : Component => gameObject?.GetComponent<T>()
 			                                                                                        ? gameObject?.AddComponent<T>()
 			                                                                                        : gameObject?.GetComponent<T>();
-		public static T GetAndFindComponet<T>(this GameObject gameObject,
-		                                      string find) where T : Component => gameObject?.transform.Find(find)?.GetComponent<T>();
-		public static T GetAndFindComponet<T>(this Transform transform,
-		                                      string find) where T : Component => transform?.gameObject.transform.Find(find)?.GetComponent<T>();
-		public static T GetAndFindComponet<T>(this Rigidbody rigidbody,
-		                                      string find) where T : Component => rigidbody?.gameObject.transform.Find(find)?.GetComponent<T>();
-		public static T GetAndFindComponet<T>(this Item item,
-		                                      string find) where T : Component => item?.gameObject.transform.Find(find)?.GetComponent<T>();
+		public static T GetComponetAndFind<T>(this GameObject gameObject, string find) where T : Component =>
+			gameObject?.transform.Find(find)?.GetComponent<T>();
+		public static T GetComponetAndFind<T>(this Transform transform, string find) where T : Component =>
+			transform?.gameObject.transform.Find(find)?.GetComponent<T>();
+		public static T GetComponetAndFind<T>(this Rigidbody rigidbody, string find) where T : Component =>
+			rigidbody?.gameObject.transform.Find(find)?.GetComponent<T>();
+		public static T GetComponetAndFind<T>(this Item item, string find) where T : Component => item?.gameObject.transform.Find(find)?.GetComponent<T>();
 		public static void InertKill(this Creature creature) {
 			creature?.Kill();
 			creature?.ragdoll?.SetState(Ragdoll.State.Inert);
@@ -147,24 +153,22 @@ namespace Extensions {
 		public static Vector3 ChangeScale(this Item item, float newScaleSize) =>
 			item.transform.localScale = new Vector3(newScaleSize, newScaleSize, newScaleSize);
 		public static void Unpenetrate(this Item item) {
-			foreach (var collisionHandlers in item?.collisionHandlers)
-				foreach (var damager in collisionHandlers?.damagers)
-					damager?.UnPenetrateAll();
-			
+			foreach (var damager in (item?.collisionHandlers).SelectMany(collisionHandlers => collisionHandlers?.damagers))
+				damager?.UnPenetrateAll();
 		}
 		public static void AddForce(this Creature creature,
-		                                 Vector3 force,
-		                                 float? forceAdded = null,
-		                                 ForceMode forceMode = ForceMode.Impulse) {
+		                            Vector3 force,
+		                            float? forceAdded = null,
+		                            ForceMode forceMode = ForceMode.Impulse) {
 			foreach (var parts in creature?.ragdoll?.parts) parts?.rb?.AddForce(force * forceAdded ?? Vector3.zero, forceMode);
 		}
 		public static void Destroy(this GameObject gameObject) => Destroy(gameObject);
 		public static Color Darken(this Color color, float darkenSpeed) => Color.Lerp(color, Color.clear, darkenSpeed);
 		public static void AddForceTowards(this Rigidbody rigidbody,
-		                                   Transform target,
+		                                   Vector3 target,
 		                                   float? forceAdded = null,
 		                                   ForceMode forceMode = ForceMode.VelocityChange) {
-			rigidbody?.AddForce((rigidbody.position - target.position).normalized * forceAdded ?? Vector3.zero, forceMode);
+			rigidbody?.AddForce((rigidbody.position - target).normalized * forceAdded ?? Vector3.zero, forceMode);
 		}
 		public static float Sqrt(this float number) => Mathf.Sqrt(number);
 		public static float Abs(this float number) => Mathf.Abs(number);
@@ -186,6 +190,58 @@ namespace Extensions {
 			var lineRenderer = gameObj?.AddComponent<LineRenderer>();
 			callback?.Invoke(lineRenderer);
 			return lineRenderer;
+		}
+		public static bool Facing(this Vector3 source, Vector3 target, float angle = 45.0f) {
+			var dot = Vector3.Dot(source.normalized, target.normalized);
+			var cosAngle = Mathf.Cos(Mathf.Deg2Rad * angle);
+			return dot >= cosAngle;
+		}
+		public static Direction GetDirection(this Vector3 vector3, float angle = 45.0f) {
+			if (vector3.Facing(Vector3.left, angle)) return Direction.Leftward;
+			if (vector3.Facing(Vector3.right, angle)) return Direction.Rightward;
+			if (vector3.Facing(Vector3.forward, angle)) return Direction.Forward;
+			if (vector3.Facing(Vector3.back, angle)) return Direction.Backward;
+			return vector3.Facing(Vector3.up, angle)
+				       ? Direction.Upward
+				       : Direction.Downward;
+		}
+		public static RagdollHand Offhand(this Item item) => item.mainHandler.otherHand;
+		public static RagdollHand Offhand(this SpellCaster spellCaster) => spellCaster.ragdollHand.otherHand;
+		public static IEnumerator Decrease(this float value, float decrement, float delay = 1.0f) {
+			while (value > 0) {
+				value -= decrement;
+				yield return new WaitForSeconds(delay);
+			}
+		}
+		public static float Velocity(this Item item, Vector3 direction) =>
+			Vector3.Dot(item.rb.velocity, direction);
+		public static Vector3 AboveHead(this Creature creature, float distance = 1.50f) =>
+			creature.Head().transform.position + (creature.Head().transform.up * distance);
+		public static void ElectrocutionRadius(Vector3 position, 
+		                                       float electrocutionPower = 25.0f,
+		                                       float electrocutionDuration = 10.0f,
+		                                       float electrocutionRadius = 10.0f) {
+			var rigidbodyHashSet = new HashSet<Rigidbody>();
+			var creatureHashSet = new HashSet<Creature>();
+			foreach (var collider in Physics.OverlapSphere(position, electrocutionRadius))
+				if (collider.attachedRigidbody &&
+				    !rigidbodyHashSet.Contains(collider.attachedRigidbody)) {
+					var creature = collider.attachedRigidbody?.GetComponentInParent<Creature>();
+					if (creature.Alive() &&
+					    !creature.isPlayer &&
+					    !creatureHashSet.Contains(creature)) {
+						creature.ragdoll?.SetState(Ragdoll.State.Destabilized);
+						creatureHashSet.Add(creature);
+					}
+					rigidbodyHashSet.Add(collider.attachedRigidbody);
+					if (!creature.isPlayer)
+						collider.attachedRigidbody?.GetComponentInParent<Creature>()
+						        .TryElectrocute(electrocutionPower,
+						                        electrocutionDuration,
+						                        true,
+						                        false,
+						                        Catalog.GetData<EffectData>("ImbueLightningRagdoll"));
+				}
 		}
 	}
 }
@@ -255,4 +311,15 @@ public class Continuum {
 			case Type.End: return;
 		}
 	}
+}
+public enum Direction {
+	Upward,
+	Forward,
+	Leftward,
+	Rightward,
+	Backward,
+	Downward
+}
+public enum Axis {
+	X, Y, Z
 }
